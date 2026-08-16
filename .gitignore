@@ -38,3 +38,4 @@ dist/
 
 # Raw Claude Code session transcript (see chat_export.md for the submitted export)
 claude-summary.jsonl
+chat-export.jsonl
