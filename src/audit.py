@@ -155,7 +155,7 @@ def main(data_dir):
     fp = os.path.join(os.path.dirname(__file__), "forecast.py")
     spec = importlib.util.spec_from_file_location("fc", fp)
     fc = importlib.util.module_from_spec(spec); spec.loader.exec_module(fc)
-    _, cal2 = fc.load(data_dir); wmap, emap = fc.build_maps(cal2)
+    _, cal2 = fc.load(data_dir); wmap, emap, mmap = fc.build_maps(cal2)
 
     def rmsse(tr, a, p):
         s = np.mean(np.diff(tr) ** 2) or 1e-6
@@ -167,10 +167,55 @@ def main(data_dir):
             tr = vv[vv.index <= cut]; a = vv[(vv.index > cut) & (vv.index <= cut + 28)].values
             if len(a) < 28:
                 continue
-            p = fc.series_forecast(tr, cut, 28, fc.window_for(sid), wmap, emap)
+            p = fc.series_forecast(tr, cut, 28, fc.window_for(sid), wmap, emap, mmap, sid)
             R.append(rmsse(tr.values, a, p)); A.append(a); F.append(p)
         print(f"  train<=d_{cut} -> d_{cut+1}..d_{cut+28}:"
               f"  meanRMSSE={np.mean(R):.3f}  WAPE={wape(np.concatenate(A),np.concatenate(F)):.3f}")
+
+    # ---------------------------------------------------------------- April validation
+    # None of the 3 windows above touch April, and the true horizon (d_1914-1941) is
+    # entirely April -- so the GROCERY_3_ATTA haircut in forecast.py can only be validated
+    # against real historical Aprils. Each cutoff below is March 31 of a given year; the
+    # ratio used is computed ONLY from years strictly before that year (no leakage from the
+    # test window or later), exactly mirroring how forecast.py's hardcoded 0.90 was derived
+    # from 2019-2022 (see SWEEP above) before ever touching the real d_1914-1941 horizon.
+    print("\n### APRIL VALIDATION (ATTA haircut vs baseline, 4 historical Aprils)")
+    atta_ids = [i for i in X.index if i.startswith("GROCERY_3_ATTA_")]
+    cal_i = cal2.set_index("dn")
+
+    def atta_ratio_before(test_year):
+        total = X.loc[atta_ids].sum(axis=0)
+        df = pd.DataFrame({"units": total}).join(cal_i[["month", "year"]])
+        ratios = []
+        for yr in (2019, 2020, 2021, 2022):
+            if yr >= test_year:
+                continue
+            fm = df[(df.year == yr) & (df.month.isin([2, 3]))]["units"]
+            ap = df[(df.year == yr) & (df.month == 4)]["units"]
+            if len(fm) == 0 or len(ap) == 0 or fm.mean() < 1:
+                continue
+            ratios.append(ap.mean() / fm.mean())
+        return float(np.mean(ratios)) if ratios else None
+
+    base_r, base_w, corr_r, corr_w = [], [], [], []
+    for cut, yr in ((450, 2019), (816, 2020), (1181, 2021), (1546, 2022)):
+        ratio = atta_ratio_before(yr)
+        Rb, Rc, Ab, Fb, Fc = [], [], [], [], []
+        for sid, vv in X.iterrows():
+            tr = vv[vv.index <= cut]; a = vv[(vv.index > cut) & (vv.index <= cut + 28)].values
+            if len(a) < 28:
+                continue
+            pb = fc.series_forecast(tr, cut, 28, fc.window_for(sid), wmap, emap)
+            pc = pb * ratio if (ratio is not None and sid in atta_ids) else pb
+            Rb.append(rmsse(tr.values, a, pb)); Rc.append(rmsse(tr.values, a, pc))
+            Ab.append(a); Fb.append(pb); Fc.append(pc)
+        wb, wc = wape(np.concatenate(Ab), np.concatenate(Fb)), wape(np.concatenate(Ab), np.concatenate(Fc))
+        base_r.append(np.mean(Rb)); base_w.append(wb); corr_r.append(np.mean(Rc)); corr_w.append(wc)
+        rs = f"{ratio:.3f}" if ratio is not None else "n/a (no prior year)"
+        print(f"  {yr} (cut d_{cut}) ratio={rs:20s}  base RMSSE={np.mean(Rb):.3f} WAPE={wb:.3f}"
+              f"  ->  corrected RMSSE={np.mean(Rc):.3f} WAPE={wc:.3f}")
+    print(f"  MEAN over 4 Aprils: baseline RMSSE={np.mean(base_r):.3f} WAPE={np.mean(base_w):.3f}"
+          f"  ->  corrected RMSSE={np.mean(corr_r):.3f} WAPE={np.mean(corr_w):.3f}")
 
 
 if __name__ == "__main__":
