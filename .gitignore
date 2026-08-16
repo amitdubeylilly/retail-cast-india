@@ -35,3 +35,6 @@ dist/
 # Local editor settings
 .vscode/
 .idea/
+
+# Raw Claude Code session transcript (see chat_export.md for the submitted export)
+claude-summary.jsonl
