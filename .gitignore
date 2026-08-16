@@ -36,6 +36,7 @@ dist/
 .vscode/
 .idea/
 
-# Raw Claude Code session transcript (see chat_export.md for the submitted export)
+# Raw chat transcripts (see chat_export.md for the submitted, cleaned export)
 claude-summary.jsonl
 chat-export.jsonl
+claude-desktop.md
