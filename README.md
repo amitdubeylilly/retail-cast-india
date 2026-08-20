@@ -14,12 +14,13 @@ python validate_format.py --submission submission.csv --sample data/sample_submi
 
 ## Method (short)
 
-Per series: `forecast = recent_level × day-of-week multiplier × festival uplift`, clipped at 0.
+Per series: `forecast = recent_level × day-of-week multiplier × festival uplift × [promo uplift]`, clipped at 0.
 
-- **recent_level** = mean of the last 42 days (28 for the `KA_3` store, which is in a genuine store-wide decline).
-- **day-of-week multiplier** from the last 180 days (captures the strong weekend lift).
+- **recent_level** = mean of the last 42 days (28 for `TN_2` post-break regime; 56 for `KA_3` recovering dip), with stockout-censored zero windows (≥7 consecutive zeros) masked out.
+- **day-of-week multiplier** from the last 180 days (captures the strong weekend lift), also stockout-masked.
 - **festival uplift** = 1.15× on days with a calendar event (horizon has Ram Navami and Eid al-Fitr).
-- **April haircut** = 0.90× on `GROCERY_3_ATTA` only, on April horizon days only — the one product that's both high-volume and has an Apr/Feb-Mar ratio below 1.0 in all 4 backtestable years (2019–2022). Validated leakage-safe against 4 historical Aprils; see below.
+- **April haircut** = 0.90× on `GROCERY_3_ATTA` only, on April horizon days only.
+- **Promo uplift** = 1.20× on `ELECTRONICS_1_CHARGER_KA_1` for horizon days 1914–1920 (promo week 2314, price drops 28% from 8.33→5.95; recent promos measured 1.17–1.80× uplift vs surrounding weeks).
 
 ## What the audit found (see `src/audit.py`)
 
@@ -27,10 +28,14 @@ Per series: `forecast = recent_level × day-of-week multiplier × festival uplif
 |---|---|---|
 | `market_signal` is target leakage | same-day per-series corr 0.92, collapses to ~0.37 when shifted ±1; exactly 0 on 100% of zero-sales days; ≈ units×10×noise; ends at d_1913 (no horizon) | **excluded** |
 | `vendor_signal` is honest but weak | present through d_1941; per-series backtest WAPE 1.04 vs trailing-mean 0.82 | **not used** as forecast |
-| `KA_3` store-wide decline | all 6 KA_3 series at 0.25–0.49 of prior-year over last ~100 days; same products elsewhere ~1.0 | **short recent window** for KA_3 |
-| price carries no signal | median within-series corr(units, price) ≈ −0.03 | **price excluded** |
+| `TN_2` permanent post-break regime | multiple series declined (CABLE 0.20×, AGARBATTI 0.35×, PICKLE 0.65×) and plateaued at new level | **28-day regime anchor** |
+| `KA_3` transient/recovering dip | all 6 series declining (DETERGENT 0.28×, CHARGER 0.27×) but still actively falling — no plateau | **56-day window** (allows recovery) |
+| Stockout-censored zero windows | ATTA: 7–173 consecutive-zero days across all stores; supply-driven, not demand | **masked** from level/DOW |
+| Phantom pickle price error | MH_2 shows 1.20 among 3.94–4.37 range | **ignored** (data error) |
+| KA_1 charger promo elasticity | price 5.95 (−28%), recent promos show 1.17–1.80× uplift; promo week in horizon | **1.20× uplift** on d_1914–1920 |
+| price carries no signal (globally) | median within-series corr(units, price) ≈ −0.03 | **price excluded** except KA_1 charger |
 | Diwali spikes look extreme but are real | biggest spikes land on Diwali / festival dates | **left uncorrected** |
-| `GROCERY_3_ATTA` dips every April | Apr/Feb-Mar ratio 0.95/0.90/0.80/0.95 across 2019–2022, all 4 years below 1.0; every other product's ratio flips sign year to year | **0.90× haircut**, ATTA only |
+| `GROCERY_3_ATTA` dips every April | Apr/Feb-Mar ratio 0.95/0.90/0.80/0.95 across 2019–2022, all 4 years below 1.0 | **0.90× haircut**, ATTA only |
 
 Run `python src/audit.py --data data` to regenerate all of the above.
 

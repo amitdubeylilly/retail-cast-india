@@ -1,0 +1,9 @@
+{
+    "challenge_id": "retailcast-india",
+    "type": "python",
+    "runtime_version": "3.11",
+    "entry": "src/forecast.py",
+    "run_command": "python src/forecast.py --data data --out submission.csv",
+    "requirements": "requirements.txt",
+    "timeout_seconds": 120
+}
